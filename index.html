@@ -15,13 +15,22 @@ const App = () => {
 
   const API_URL = "https://script.google.com/macros/s/AKfycbzi23mZh4IncQVV9vl85idlZz-wBPVtR_vfcJZaqY8vt0lttGwJcW53LybqZbtqm5NL/exec";
 
+  // Palette สีสดใสสำหรับ 6 ชั้นเรียน (ป.1 - ป.6)
+  const GRADE_COLORS = [
+    '#EF4444', // ป.1 - แดงสด
+    '#F59E0B', // ป.2 - ส้ม/เหลืองทอง
+    '#10B981', // ป.3 - เขียวมรกต
+    '#3B82F6', // ป.4 - ฟ้าสดใส
+    '#8B5CF6', // ป.5 - ม่วง
+    '#EC4899'  // ป.6 - ชมพู
+  ];
+
   // ฟังก์ชันแปลงวันที่เป็นรูปแบบไทย (02 กุมภาพันธ์ 2569)
   const formatThaiDate = (dateStr) => {
     if (!dateStr || dateStr === "-") return "-";
     
     try {
       let date;
-      // รองรับทั้งรูปแบบ dd/mm/yyyy และ ISO/Date string
       if (dateStr.includes('/')) {
         const [d, m, y] = dateStr.split('/').map(Number);
         date = new Date(y, m - 1, d);
@@ -81,7 +90,7 @@ const App = () => {
 
       students.forEach(student => {
         Object.keys(student).forEach(key => {
-          if (key !== 'prefix' && key !== 'name' && key !== 'surname') {
+          if (key !== 'prefix' && key !== 'name' && key !== 'surname' && key !== 'grade') {
             gradeEntries++;
             totalEntries++;
             if (student[key] === true || student[key] === "TRUE") {
@@ -109,7 +118,7 @@ const App = () => {
       const [d2, m2, y2] = b.split('/').map(Number);
       return new Date(y1, m1 - 1, d1) - new Date(y2, m2 - 1, d2);
     }).map(date => ({
-      date: date, // Keep original for mapping/sorting
+      date: date,
       formattedDate: formatThaiDate(date),
       count: dailyDataMap[date],
       percentage: totalStudents > 0 ? (dailyDataMap[date] / totalStudents) * 100 : 0
@@ -156,11 +165,20 @@ const App = () => {
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
+      const pData = payload[0].payload;
+      // ตรวจสอบว่าเป็นกราฟแท่ง (มี property name ที่เป็น ป.x) หรือกราฟเส้น (ใช้วันที่)
+      const isGradeChart = pData.name && pData.name.includes('ป.');
+      
       return (
         <div className="bg-white p-4 shadow-lg rounded-lg border border-gray-100">
-          <p className="font-bold text-gray-800 mb-1">{formatThaiDate(label)}</p>
+          <p className="font-bold text-gray-800 mb-1">
+            {isGradeChart ? pData.name : formatThaiDate(label)}
+          </p>
           <p className="text-red-600 font-bold">
-            จำนวน: {payload[0].value} คน ({payload[0].payload.percentage?.toFixed(1) || payload[0].payload.value?.toFixed(1)}%)
+            {isGradeChart 
+              ? `ร้อยละ ${payload[0].value.toFixed(1)}` 
+              : `จำนวน: ${payload[0].value} คน (${pData.percentage?.toFixed(1)}%)`
+            }
           </p>
         </div>
       );
@@ -212,16 +230,16 @@ const App = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard title="นักเรียนทั้งหมด" value={`${stats?.totalStudents || 0} คน`} icon={Users} color="#dc2626" />
               <StatCard title="อัตราการดื่มนมเฉลี่ย" value={`${stats?.avgRate.toFixed(1) || 0}%`} icon={TrendingUp} color="#ea580c" />
-              <StatCard title="ชั้นที่ดื่มดีที่สุด" value={stats?.topGrade?.name || "-"} subValue={`เฉลี่ย ${stats?.topGrade?.value.toFixed(1)}%`} icon={Award} color="#ca8a04" />
+              <StatCard title="ชั้นที่ดื่มดีที่สุด" value={stats?.topGrade?.name || "-"} subValue={`ร้อยละ ${stats?.topGrade?.value.toFixed(1)}`} icon={Award} color="#ca8a04" />
               <div className="bg-yellow-50 rounded-2xl p-4 flex items-center border border-yellow-200 shadow-sm">
                 <AlertCircle className="text-yellow-600 mr-3 shrink-0" size={20} />
-                <p className="text-xs text-yellow-800 leading-snug font-medium">ระบบประมวลผลข้อมูลวันที่ตามรูปแบบพุทธศักราช (พ.ศ.) และชื่อเดือนภาษาไทยเพื่อความสะดวกในการรายงานผล</p>
+                <p className="text-xs text-yellow-800 leading-snug font-medium">สัดส่วนการดื่มนมรายชั้นคำนวณจากข้อมูลการดื่มนมทั้งหมดทุกวันรวมกัน เพื่อแสดงประสิทธิภาพของโครงการในภาพรวม</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><Filter className="text-red-600" size={20} /> สัดส่วนการดื่มนมรายชั้น (%)</h3>
+                <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><Filter className="text-red-600" size={20} /> สัดส่วนการดื่มนมรายชั้นสะสม (%)</h3>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={stats?.gradeComparison}>
@@ -231,7 +249,10 @@ const App = () => {
                       <Tooltip content={<CustomTooltip />} />
                       <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={40}>
                         {stats?.gradeComparison.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#dc2626' : '#f59e0b'} />
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={GRADE_COLORS[index % GRADE_COLORS.length]} 
+                          />
                         ))}
                       </Bar>
                     </BarChart>
@@ -378,7 +399,7 @@ const App = () => {
       </main>
       
       <footer className="mt-16 text-center text-gray-400 text-sm border-t pt-8 pb-8">
-        <p>© 2024 โรงเรียนวัดแม่กะ - ระบบติดตามสุขภาพนักเรียนเชิงรุก</p>
+        <p>© โรงเรียนวัดแม่กะ</p>
       </footer>
     </div>
   );
