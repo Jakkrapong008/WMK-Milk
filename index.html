@@ -1,408 +1,343 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
-} from 'recharts';
-import { 
-  Search, Users, TrendingUp, Award, Calendar, Filter, AlertCircle, CheckCircle2, XCircle, Loader2
-} from 'lucide-react';
-
-const App = () => {
-  const [activeTab, setActiveTab] = useState('summary');
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState({});
-  const [searchTerm, setSearchTerm] = useState('');
-  const [error, setError] = useState(null);
-
-  const API_URL = "https://script.google.com/macros/s/AKfycbzi23mZh4IncQVV9vl85idlZz-wBPVtR_vfcJZaqY8vt0lttGwJcW53LybqZbtqm5NL/exec";
-
-  // Palette สีสดใสสำหรับ 6 ชั้นเรียน (ป.1 - ป.6)
-  const GRADE_COLORS = [
-    '#EF4444', // ป.1 - แดงสด
-    '#F59E0B', // ป.2 - ส้ม/เหลืองทอง
-    '#10B981', // ป.3 - เขียวมรกต
-    '#3B82F6', // ป.4 - ฟ้าสดใส
-    '#8B5CF6', // ป.5 - ม่วง
-    '#EC4899'  // ป.6 - ชมพู
-  ];
-
-  // ฟังก์ชันแปลงวันที่เป็นรูปแบบไทย (02 กุมภาพันธ์ 2569)
-  const formatThaiDate = (dateStr) => {
-    if (!dateStr || dateStr === "-") return "-";
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ข้อมูลสารสนเทศการดื่มนม - โรงเรียนวัดแม่กะ</title>
     
-    try {
-      let date;
-      if (dateStr.includes('/')) {
-        const [d, m, y] = dateStr.split('/').map(Number);
-        date = new Date(y, m - 1, d);
-      } else {
-        date = new Date(dateStr);
-      }
-
-      if (isNaN(date.getTime())) return dateStr;
-
-      const months = [
-        "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
-      ];
-
-      return `${date.getDate().toString().padStart(2, '0')} ${months[date.getMonth()]} ${date.getFullYear() + 543}`;
-    } catch (e) {
-      return dateStr;
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(API_URL);
-      const json = await response.json();
-      setData(json);
-      setError(null);
-    } catch (err) {
-      console.error("Fetch error:", err);
-      setError("ไม่สามารถเชื่อมต่อข้อมูลได้");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const allGrades = ['1', '2', '3', '4', '5', '6'];
-  
-  const stats = useMemo(() => {
-    if (!data || Object.keys(data).length === 0) return null;
+    <!-- ฟอนต์ Sarabun -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700;800&display=swap" rel="stylesheet">
     
-    let totalStudents = 0;
-    let totalEntries = 0;
-    let totalMilkConsumed = 0;
-    const gradeStats = [];
-    const dailyDataMap = {};
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React, ReactDOM, Babel, Recharts และ Lucide Icons -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide-react"></script>
 
-    allGrades.forEach(grade => {
-      const students = data[grade] || [];
-      totalStudents += students.length;
-      
-      let gradeConsumed = 0;
-      let gradeEntries = 0;
+    <style>
+        body {
+            font-family: 'Sarabun', sans-serif;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <div id="root"></div>
 
-      students.forEach(student => {
-        Object.keys(student).forEach(key => {
-          if (key !== 'prefix' && key !== 'name' && key !== 'surname' && key !== 'grade') {
-            gradeEntries++;
-            totalEntries++;
-            if (student[key] === true || student[key] === "TRUE") {
-              gradeConsumed++;
-              totalMilkConsumed++;
-              dailyDataMap[key] = (dailyDataMap[key] || 0) + 1;
-            } else {
-              dailyDataMap[key] = (dailyDataMap[key] || 0);
-            }
-          }
-        });
-      });
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const { 
+            LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell 
+        } = Recharts;
+        const { 
+            Search, Users, TrendingUp, Award, Calendar, Filter, AlertCircle, CheckCircle2, XCircle, Loader2, ChevronRight 
+        } = lucideReact;
 
-      gradeStats.push({
-        name: `ป.${grade}`,
-        value: gradeEntries > 0 ? (gradeConsumed / gradeEntries) * 100 : 0,
-        count: gradeConsumed,
-        total: gradeEntries,
-        studentCount: students.length
-      });
-    });
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('summary');
+            const [loading, setLoading] = useState(true);
+            const [data, setData] = useState({});
+            const [searchTerm, setSearchTerm] = useState('');
 
-    const dailyTrend = Object.keys(dailyDataMap).sort((a, b) => {
-      const [d1, m1, y1] = a.split('/').map(Number);
-      const [d2, m2, y2] = b.split('/').map(Number);
-      return new Date(y1, m1 - 1, d1) - new Date(y2, m2 - 1, d2);
-    }).map(date => ({
-      date: date,
-      formattedDate: formatThaiDate(date),
-      count: dailyDataMap[date],
-      percentage: totalStudents > 0 ? (dailyDataMap[date] / totalStudents) * 100 : 0
-    }));
+            const API_URL = "https://script.google.com/macros/s/AKfycbzi23mZh4IncQVV9vl85idlZz-wBPVtR_vfcJZaqY8vt0lttGwJcW53LybqZbtqm5NL/exec";
 
-    const topGrade = [...gradeStats].sort((a, b) => b.value - a.value)[0];
+            const GRADE_COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899'];
 
-    return { totalStudents, avgRate: totalEntries > 0 ? (totalMilkConsumed / totalEntries) * 100 : 0, topGrade, gradeComparison: gradeStats, dailyTrend };
-  }, [data]);
+            const formatThaiDate = (dateStr) => {
+                if (!dateStr || dateStr === "-") return "-";
+                try {
+                    let date;
+                    if (dateStr.includes('/')) {
+                        const [d, m, y] = dateStr.split('/').map(Number);
+                        date = new Date(y, m - 1, d);
+                    } else {
+                        date = new Date(dateStr);
+                    }
+                    if (isNaN(date.getTime())) return dateStr;
+                    const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+                    return `${date.getDate().toString().padStart(2, '0')} ${months[date.getMonth()]} ${date.getFullYear() + 543}`;
+                } catch (e) { return dateStr; }
+            };
 
-  const searchResults = useMemo(() => {
-    if (!searchTerm) return [];
-    const results = [];
-    allGrades.forEach(grade => {
-      const students = data[grade] || [];
-      students.forEach(s => {
-        const fullName = `${s.prefix}${s.name} ${s.surname}`;
-        if (fullName.includes(searchTerm)) results.push({ ...s, grade: `ป.${grade}` });
-      });
-    });
-    return results;
-  }, [data, searchTerm]);
+            useEffect(() => { fetchData(); }, []);
 
-  const getDatesMissed = (student) => {
-    return Object.keys(student).filter(key => 
-      key !== 'prefix' && key !== 'name' && key !== 'surname' && key !== 'grade' && (student[key] === false || student[key] === "FALSE")
-    );
-  };
+            const fetchData = async () => {
+                setLoading(true);
+                try {
+                    const response = await fetch(API_URL);
+                    const json = await response.json();
+                    setData(json);
+                } catch (err) {
+                    console.error("Fetch error:", err);
+                } finally {
+                    setLoading(false);
+                }
+            };
 
-  const StatCard = ({ title, value, icon: Icon, color, subValue }) => (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 transition-all hover:shadow-md" style={{ borderColor: color }}>
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-gray-500 text-sm font-medium mb-1">{title}</p>
-          <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
-          {subValue && <p className="text-xs text-gray-400 mt-1">{subValue}</p>}
-        </div>
-        <div className="p-3 rounded-xl" style={{ backgroundColor: `${color}15` }}>
-          <Icon size={24} style={{ color }} />
-        </div>
-      </div>
-    </div>
-  );
+            const allGrades = ['1', '2', '3', '4', '5', '6'];
+            
+            const stats = useMemo(() => {
+                if (!data || Object.keys(data).length === 0) return null;
+                let totalStudents = 0, totalEntries = 0, totalMilkConsumed = 0;
+                const gradeStats = [], dailyDataMap = {};
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      const pData = payload[0].payload;
-      // ตรวจสอบว่าเป็นกราฟแท่ง (มี property name ที่เป็น ป.x) หรือกราฟเส้น (ใช้วันที่)
-      const isGradeChart = pData.name && pData.name.includes('ป.');
-      
-      return (
-        <div className="bg-white p-4 shadow-lg rounded-lg border border-gray-100">
-          <p className="font-bold text-gray-800 mb-1">
-            {isGradeChart ? pData.name : formatThaiDate(label)}
-          </p>
-          <p className="text-red-600 font-bold">
-            {isGradeChart 
-              ? `ร้อยละ ${payload[0].value.toFixed(1)}` 
-              : `จำนวน: ${payload[0].value} คน (${pData.percentage?.toFixed(1)}%)`
-            }
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
+                allGrades.forEach(grade => {
+                    const students = data[grade] || [];
+                    totalStudents += students.length;
+                    let gradeConsumed = 0, gradeEntries = 0;
+                    students.forEach(student => {
+                        Object.keys(student).forEach(key => {
+                            if (!['prefix', 'name', 'surname', 'grade'].includes(key)) {
+                                gradeEntries++; totalEntries++;
+                                if (student[key] === true || student[key] === "TRUE") {
+                                    gradeConsumed++; totalMilkConsumed++;
+                                    dailyDataMap[key] = (dailyDataMap[key] || 0) + 1;
+                                } else { dailyDataMap[key] = (dailyDataMap[key] || 0); }
+                            }
+                        });
+                    });
+                    gradeStats.push({ name: `ป.${grade}`, value: gradeEntries > 0 ? (gradeConsumed / gradeEntries) * 100 : 0, count: gradeConsumed, total: gradeEntries });
+                });
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 font-['Sarabun']">
-        <Loader2 className="animate-spin text-red-600 mb-4" size={48} />
-        <p className="text-gray-600 animate-pulse">กำลังประมวลผลข้อมูลนักเรียน...</p>
-      </div>
-    );
-  }
+                const dailyTrend = Object.keys(dailyDataMap).sort((a, b) => {
+                    const [d1, m1, y1] = a.split('/').map(Number);
+                    const [d2, m2, y2] = b.split('/').map(Number);
+                    return new Date(y1, m1 - 1, d1) - new Date(y2, m2 - 1, d2);
+                }).map(date => ({ date, percentage: (dailyDataMap[date] / totalStudents) * 100, count: dailyDataMap[date] }));
 
-  return (
-    <div className="min-h-screen bg-gray-50 font-['Sarabun'] text-gray-800 pb-12">
-      <header className="bg-gradient-to-r from-red-700 via-red-600 to-yellow-500 text-white shadow-lg sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="bg-white p-1 rounded-full shadow-inner shrink-0">
-              <img src="https://img2.pic.in.th/logob0b7643db577ceee.png" alt="Logo" className="h-12 w-12 object-contain" />
-            </div>
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold leading-tight">ข้อมูลสารสนเทศการดื่มนมของนักเรียน</h1>
-              <p className="text-red-100 text-sm opacity-90 font-medium">โรงเรียนวัดแม่กะ สังกัด สพป.เชียงใหม่ เขต 2</p>
-            </div>
-          </div>
-          <div className="flex items-center bg-white/20 backdrop-blur-md px-4 py-2 rounded-full border border-white/30">
-            <Calendar size={18} className="mr-2" />
-            <span className="text-sm font-bold">วันนี้: {formatThaiDate(new Date().toLocaleDateString('en-GB'))}</span>
-          </div>
-        </div>
-      </header>
+                return { totalStudents, avgRate: totalEntries > 0 ? (totalMilkConsumed / totalEntries) * 100 : 0, topGrade: [...gradeStats].sort((a, b) => b.value - a.value)[0], gradeComparison: gradeStats, dailyTrend };
+            }, [data]);
 
-      <nav className="bg-white border-b sticky top-[80px] md:top-[88px] z-40 shadow-sm overflow-x-auto no-scrollbar">
-        <div className="max-w-7xl mx-auto px-4 flex">
-          <button onClick={() => setActiveTab('summary')} className={`px-6 py-4 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'summary' ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-gray-500 hover:text-red-500'}`}>สรุปภาพรวม</button>
-          {allGrades.map(grade => (
-            <button key={grade} onClick={() => setActiveTab(grade)} className={`px-6 py-4 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === grade ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-gray-500 hover:text-red-500'}`}>ชั้น ป.{grade}</button>
-          ))}
-        </div>
-      </nav>
+            const searchResults = useMemo(() => {
+                if (!searchTerm) return [];
+                const results = [];
+                allGrades.forEach(grade => {
+                    (data[grade] || []).forEach(s => {
+                        if (`${s.prefix}${s.name} ${s.surname}`.includes(searchTerm)) results.push({ ...s, grade: `ป.${grade}` });
+                    });
+                });
+                return results;
+            }, [data, searchTerm]);
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
-        {activeTab === 'summary' ? (
-          <div className="space-y-8 animate-in fade-in">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard title="นักเรียนทั้งหมด" value={`${stats?.totalStudents || 0} คน`} icon={Users} color="#dc2626" />
-              <StatCard title="อัตราการดื่มนมเฉลี่ย" value={`${stats?.avgRate.toFixed(1) || 0}%`} icon={TrendingUp} color="#ea580c" />
-              <StatCard title="ชั้นที่ดื่มดีที่สุด" value={stats?.topGrade?.name || "-"} subValue={`ร้อยละ ${stats?.topGrade?.value.toFixed(1)}`} icon={Award} color="#ca8a04" />
-              <div className="bg-yellow-50 rounded-2xl p-4 flex items-center border border-yellow-200 shadow-sm">
-                <AlertCircle className="text-yellow-600 mr-3 shrink-0" size={20} />
-                <p className="text-xs text-yellow-800 leading-snug font-medium">สัดส่วนการดื่มนมรายชั้นคำนวณจากข้อมูลการดื่มนมทั้งหมดทุกวันรวมกัน เพื่อแสดงประสิทธิภาพของโครงการในภาพรวม</p>
-              </div>
-            </div>
+            const getDatesMissed = (student) => Object.keys(student).filter(key => !['prefix', 'name', 'surname', 'grade'].includes(key) && (student[key] === false || student[key] === "FALSE"));
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><Filter className="text-red-600" size={20} /> สัดส่วนการดื่มนมรายชั้นสะสม (%)</h3>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={stats?.gradeComparison}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                      <YAxis hide />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={40}>
-                        {stats?.gradeComparison.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={GRADE_COLORS[index % GRADE_COLORS.length]} 
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><TrendingUp className="text-red-600" size={20} /> แนวโน้มจำนวนคนดื่มนมรายวัน</h3>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={stats?.dailyTrend}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                      <XAxis dataKey="date" tickFormatter={(val) => val.split('/')[0] + '/' + val.split('/')[1]} axisLine={false} tickLine={false} />
-                      <YAxis hide />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Line type="monotone" dataKey="count" stroke="#dc2626" strokeWidth={3} dot={{ r: 4, fill: '#dc2626' }} activeDot={{ r: 8 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-6 border-b bg-gray-50/50 flex justify-between items-center">
-                <h3 className="text-lg font-bold">ค้นหาประวัติรายบุคคล</h3>
-                <Search className="text-gray-400" size={20} />
-              </div>
-              <div className="p-6">
-                <input type="text" placeholder="ค้นหาด้วยชื่อหรือนามสกุล..." className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all font-medium" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                {searchTerm && (
-                  <div className="mt-6 max-h-80 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {searchResults.length > 0 ? searchResults.map((student, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-white hover:border-red-200 hover:bg-red-50/30 transition-all">
-                        <div>
-                          <p className="font-bold text-gray-800">{student.prefix}{student.name} {student.surname}</p>
-                          <p className="text-xs text-red-500 font-bold">{student.grade}</p>
+            const CustomTooltip = ({ active, payload, label }) => {
+                if (active && payload && payload.length) {
+                    const isGradeChart = payload[0].payload.name?.includes('ป.');
+                    return (
+                        <div className="bg-white p-4 shadow-lg rounded-lg border border-gray-100">
+                            <p className="font-bold text-gray-800 mb-1">{isGradeChart ? payload[0].payload.name : formatThaiDate(label)}</p>
+                            <p className="text-red-600 font-bold">{isGradeChart ? `ร้อยละ ${payload[0].value.toFixed(1)}` : `จำนวน: ${payload[0].value} คน`}</p>
                         </div>
-                        <div className="flex gap-1 overflow-x-auto max-w-[150px] scrollbar-hide">
-                          {Object.keys(student).map(k => (
-                            k !== 'prefix' && k !== 'name' && k !== 'surname' && k !== 'grade' ? (
-                              <div key={k} className={`w-3 h-3 rounded-full shrink-0 ${student[k] === true || student[k] === "TRUE" ? 'bg-green-500' : 'bg-red-500'}`} title={formatThaiDate(k)} />
-                            ) : null
-                          ))}
-                        </div>
-                      </div>
-                    )) : <p className="col-span-full text-center py-8 text-gray-400">ไม่พบข้อมูลนักเรียน</p>}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-8 animate-in slide-in-from-right-4">
-             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <h2 className="text-3xl font-black text-gray-800 border-l-8 border-red-600 pl-4">นักเรียนชั้น ป.{activeTab}</h2>
-                <div className="bg-red-600 text-white px-6 py-2 rounded-full font-bold shadow-md">นักเรียนทั้งหมด {data[activeTab]?.length || 0} คน</div>
-             </div>
+                    );
+                }
+                return null;
+            };
 
-             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                   <h3 className="text-lg font-bold mb-6">กราฟการดื่มนมรายวัน (ป.{activeTab})</h3>
-                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={data[activeTab]?.[0] ? Object.keys(data[activeTab][0]).filter(k => k !== 'prefix' && k !== 'name' && k !== 'surname').map(date => {
-                        const count = data[activeTab].filter(s => s[date] === true || s[date] === "TRUE").length;
-                        return { date, count, percentage: (count / data[activeTab].length) * 100 };
-                      }) : []}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                        <XAxis dataKey="date" tickFormatter={(val) => val.split('/')[0] + '/' + val.split('/')[1]} axisLine={false} tickLine={false} />
-                        <YAxis hide />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Line type="stepAfter" dataKey="count" stroke="#ca8a04" strokeWidth={3} dot={{ r: 4, fill: '#ca8a04' }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                   </div>
+            if (loading) return (
+                <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+                    <Loader2 className="animate-spin text-red-600 mb-4" size={48} />
+                    <p className="text-gray-600">กำลังประมวลผลข้อมูล...</p>
                 </div>
+            );
 
-                <div className="bg-gradient-to-br from-red-600 to-red-800 text-white p-8 rounded-2xl shadow-xl flex flex-col justify-center text-center">
-                   <CheckCircle2 size={48} className="mx-auto mb-4 text-red-200" />
-                   <h4 className="text-xl font-bold">สรุปวันล่าสุด</h4>
-                   <p className="text-yellow-300 font-bold mb-2">
-                    {(() => {
-                      const students = data[activeTab] || [];
-                      if (students.length === 0) return "-";
-                      const dates = Object.keys(students[0]).filter(k => k !== 'prefix' && k !== 'name' && k !== 'surname');
-                      return formatThaiDate(dates[dates.length - 1]) || "-";
-                    })()}
-                   </p>
-                   <div className="text-5xl font-black mb-4">
-                    {(() => {
-                      const students = data[activeTab] || [];
-                      if (students.length === 0) return "0 / 0";
-                      const dates = Object.keys(students[0]).filter(k => k !== 'prefix' && k !== 'name' && k !== 'surname');
-                      const lastDate = dates[dates.length - 1];
-                      const drankCount = students.filter(s => s[lastDate] === true || s[lastDate] === "TRUE").length;
-                      return `${drankCount}/${students.length}`;
-                    })()}
-                   </div>
-                   <p className="text-red-100 text-xs opacity-80">จำนวนนักเรียนที่ดื่มนมในวันล่าสุดที่บันทึกข้อมูล</p>
-                </div>
-             </div>
-
-             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="p-6 border-b flex items-center justify-between bg-gray-50/50">
-                  <h3 className="text-lg font-bold flex items-center gap-2"><XCircle className="text-red-600" /> รายชื่อนักเรียนที่ไม่ได้ดื่มนม</h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-gray-100 text-gray-500 uppercase text-xs font-bold">
-                      <tr>
-                        <th className="px-6 py-4">ลำดับ</th>
-                        <th className="px-6 py-4">ชื่อ-นามสกุล</th>
-                        <th className="px-6 py-4">จำนวนวันที่ขาด</th>
-                        <th className="px-6 py-4">วันที่ไม่ได้ดื่ม (ว/ด/ป)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {data[activeTab]?.filter(s => getDatesMissed(s).length > 0).map((student, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50 transition-all">
-                          <td className="px-6 py-4 text-gray-400 font-medium">{idx + 1}</td>
-                          <td className="px-6 py-4 font-bold text-gray-800">{student.prefix}{student.name} {student.surname}</td>
-                          <td className="px-6 py-4"><span className="text-red-600 font-black">ขาด {getDatesMissed(student).length} วัน</span></td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-wrap gap-2">
-                               {getDatesMissed(student).map((date, dIdx) => (
-                                 <span key={dIdx} className="text-[11px] bg-red-50 text-red-600 px-2 py-1 rounded-md border border-red-100 font-bold">
-                                   {formatThaiDate(date)}
-                                 </span>
-                               ))}
+            return (
+                <div className="pb-12">
+                    <header className="bg-gradient-to-r from-red-700 via-red-600 to-yellow-500 text-white shadow-lg sticky top-0 z-50">
+                        <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-white p-1 rounded-full"><img src="https://img2.pic.in.th/logob0b7643db577ceee.png" className="h-12 w-12 object-contain" /></div>
+                                <div>
+                                    <h1 className="text-xl md:text-2xl font-bold">ข้อมูลสารสนเทศการดื่มนมของนักเรียน</h1>
+                                    <p className="text-red-100 text-sm">โรงเรียนวัดแม่กะ สังกัด สพป.เชียงใหม่ เขต 2</p>
+                                </div>
                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {(!data[activeTab] || data[activeTab]?.filter(s => getDatesMissed(s).length > 0).length === 0) && (
-                        <tr><td colSpan="4" className="px-6 py-12 text-center text-gray-400 italic">ไม่พบรายชื่อนักเรียนที่มีประวัติไม่ได้ดื่มนมในชั้นเรียนนี้</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-             </div>
-          </div>
-        )}
-      </main>
-      
-      <footer className="mt-16 text-center text-gray-400 text-sm border-t pt-8 pb-8">
-        <p>© โรงเรียนวัดแม่กะ</p>
-      </footer>
-    </div>
-  );
-};
+                            <div className="flex items-center bg-white/20 px-4 py-2 rounded-full border border-white/30 text-sm font-bold">
+                                <Calendar size={18} className="mr-2" /> {formatThaiDate(new Date().toLocaleDateString('en-GB'))}
+                            </div>
+                        </div>
+                    </header>
 
-export default App;
+                    <nav className="bg-white border-b sticky top-[80px] md:top-[88px] z-40 shadow-sm overflow-x-auto no-scrollbar">
+                        <div className="max-w-7xl mx-auto px-4 flex">
+                            <button onClick={() => setActiveTab('summary')} className={`px-6 py-4 text-sm font-bold border-b-2 transition-all ${activeTab === 'summary' ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-gray-500'}`}>สรุปภาพรวม</button>
+                            {allGrades.map(g => <button key={g} onClick={() => setActiveTab(g)} className={`px-6 py-4 text-sm font-bold border-b-2 transition-all ${activeTab === g ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-gray-500'}`}>ชั้น ป.{g}</button>)}
+                        </div>
+                    </nav>
+
+                    <main className="max-w-7xl mx-auto px-4 mt-8">
+                        {activeTab === 'summary' ? (
+                            <div className="space-y-8">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-red-600">
+                                        <p className="text-gray-500 text-sm font-medium mb-1">นักเรียนทั้งหมด</p>
+                                        <h3 className="text-2xl font-bold">{stats?.totalStudents || 0} คน</h3>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-orange-500">
+                                        <p className="text-gray-500 text-sm font-medium mb-1">อัตราการดื่มนมเฉลี่ย</p>
+                                        <h3 className="text-2xl font-bold">{stats?.avgRate.toFixed(1) || 0}%</h3>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-yellow-500">
+                                        <p className="text-gray-500 text-sm font-medium mb-1">ชั้นที่ดื่มดีที่สุด</p>
+                                        <h3 className="text-2xl font-bold">{stats?.topGrade?.name || "-"}</h3>
+                                        <p className="text-xs text-gray-400">ร้อยละ {stats?.topGrade?.value.toFixed(1)}</p>
+                                    </div>
+                                    <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-200 flex items-center">
+                                        <AlertCircle className="text-yellow-600 mr-3 shrink-0" />
+                                        <p className="text-xs text-yellow-800">คำนวณจากข้อมูลสะสมทุกวันในระบบ</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border">
+                                        <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><Filter className="text-red-600" size={20} /> สัดส่วนการดื่มนมรายชั้นสะสม (%)</h3>
+                                        <div className="h-72">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={stats?.gradeComparison}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                                    <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                                                    <YAxis hide />
+                                                    <Tooltip content={<CustomTooltip />} />
+                                                    <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={40}>
+                                                        {stats?.gradeComparison.map((e, i) => <Cell key={i} fill={GRADE_COLORS[i % 6]} />)}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border">
+                                        <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><TrendingUp className="text-red-600" size={20} /> แนวโน้มการดื่มนมรายวัน</h3>
+                                        <div className="h-72">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <LineChart data={stats?.dailyTrend}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                                    <XAxis dataKey="date" tickFormatter={(v)=>v.split('/')[0]+'/'+v.split('/')[1]} axisLine={false} tickLine={false} />
+                                                    <YAxis hide />
+                                                    <Tooltip content={<CustomTooltip />} />
+                                                    <Line type="monotone" dataKey="count" stroke="#dc2626" strokeWidth={3} dot={{ r: 4, fill: '#dc2626' }} />
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                                    <div className="p-6 border-b bg-gray-50/50 flex justify-between items-center">
+                                        <h3 className="text-lg font-bold">ค้นหาประวัติรายบุคคล</h3>
+                                        <Search className="text-gray-400" size={20} />
+                                    </div>
+                                    <div className="p-6">
+                                        <input type="text" placeholder="ค้นหาด้วยชื่อหรือนามสกุล..." className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-red-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                                        {searchTerm && (
+                                            <div className="mt-6 max-h-80 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {searchResults.length > 0 ? searchResults.map((s, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between p-4 rounded-xl border hover:bg-red-50 transition-all">
+                                                        <div><p className="font-bold">{s.prefix}{s.name} {s.surname}</p><p className="text-xs text-red-500 font-bold">{s.grade}</p></div>
+                                                        <div className="flex gap-1 overflow-x-auto max-w-[150px] scrollbar-hide">
+                                                            {Object.keys(s).filter(k=>!['prefix','name','surname','grade'].includes(k)).map(k => (
+                                                                <div key={k} className={`w-3 h-3 rounded-full shrink-0 ${s[k] === true || s[k] === "TRUE" ? 'bg-green-500' : 'bg-red-500'}`} title={formatThaiDate(k)} />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )) : <p className="col-span-full text-center py-8 text-gray-400">ไม่พบข้อมูล</p>}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-8">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-3xl font-black border-l-8 border-red-600 pl-4">นักเรียนชั้น ป.{activeTab}</h2>
+                                    <div className="bg-red-600 text-white px-6 py-2 rounded-full font-bold">นักเรียน {data[activeTab]?.length || 0} คน</div>
+                                </div>
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                    <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border">
+                                        <h3 className="text-lg font-bold mb-6">กราฟการดื่มนมรายวัน (ป.{activeTab})</h3>
+                                        <div className="h-64">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <LineChart data={data[activeTab]?.[0] ? Object.keys(data[activeTab][0]).filter(k=>!['prefix','name','surname'].includes(k)).map(date => ({ date, count: data[activeTab].filter(s=>s[date]===true||s[date]==="TRUE").length })) : []}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                                    <XAxis dataKey="date" tickFormatter={(v)=>v.split('/')[0]+'/'+v.split('/')[1]} axisLine={false} tickLine={false} />
+                                                    <YAxis hide />
+                                                    <Tooltip content={<CustomTooltip />} />
+                                                    <Line type="stepAfter" dataKey="count" stroke="#ca8a04" strokeWidth={3} dot={{ r: 4, fill: '#ca8a04' }} />
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-red-600 to-red-800 text-white p-8 rounded-2xl shadow-xl text-center flex flex-col justify-center">
+                                        <CheckCircle2 size={48} className="mx-auto mb-4 text-red-200" />
+                                        <h4 className="text-xl font-bold">สรุปวันล่าสุด</h4>
+                                        <p className="text-yellow-300 font-bold mb-2">
+                                            {(() => {
+                                                const s = data[activeTab] || [];
+                                                if (s.length === 0) return "-";
+                                                const d = Object.keys(s[0]).filter(k=>!['prefix','name','surname'].includes(k));
+                                                return formatThaiDate(d[d.length - 1]);
+                                            })()}
+                                        </p>
+                                        <div className="text-5xl font-black mb-4">
+                                            {(() => {
+                                                const s = data[activeTab] || [];
+                                                if (s.length === 0) return "0/0";
+                                                const d = Object.keys(s[0]).filter(k=>!['prefix','name','surname'].includes(k));
+                                                const last = d[d.length - 1];
+                                                return `${s.filter(st=>st[last]===true||st[last]==="TRUE").length}/${s.length}`;
+                                            })()}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                                    <div className="p-6 border-b flex items-center justify-between bg-gray-50/50">
+                                        <h3 className="text-lg font-bold flex items-center gap-2"><XCircle className="text-red-600" /> รายชื่อนักเรียนที่ไม่ได้ดื่มนม</h3>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left">
+                                            <thead className="bg-gray-100 text-gray-500 uppercase text-xs font-bold">
+                                                <tr><th className="px-6 py-4">ลำดับ</th><th className="px-6 py-4">ชื่อ-นามสกุล</th><th className="px-6 py-4">จำนวนวันที่ขาด</th><th className="px-6 py-4">วันที่ไม่ได้ดื่ม</th></tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {data[activeTab]?.filter(s => getDatesMissed(s).length > 0).map((s, idx) => (
+                                                    <tr key={idx} className="hover:bg-gray-50 transition-all">
+                                                        <td className="px-6 py-4 text-gray-400 font-medium">{idx + 1}</td>
+                                                        <td className="px-6 py-4 font-bold text-gray-800">{s.prefix}{s.name} {s.surname}</td>
+                                                        <td className="px-6 py-4"><span className="text-red-600 font-black">ขาด {getDatesMissed(s).length} วัน</span></td>
+                                                        <td className="px-6 py-4">
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {getDatesMissed(s).map((d, dIdx) => (
+                                                                    <span key={dIdx} className="text-[10px] bg-red-50 text-red-600 px-2 py-1 rounded-md border border-red-100 font-bold">{formatThaiDate(d)}</span>
+                                                                ))}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                    <footer className="mt-16 text-center text-gray-400 text-sm border-t pt-8 pb-8"><p>© โรงเรียนวัดแม่กะ</p></footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
