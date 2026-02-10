@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบสรุปข้อมูลการดื่มนมโรงเรียน</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Recharts (for charts) -->
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;700&display=swap');
+        body {
+            font-family: 'Sarabun', sans-serif;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const { 
+            LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, AreaChart, Area 
+        } = Recharts;
+
+        // การตั้งค่าการเชื่อมโยงข้อมูล
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbxhLGjEX9jWAefstH2dmudWg3lctsPmysXknotbgtEtlt7CfI1U7WDVPcCvp1-fCcOjqQ/exec";
+        const LOGO_URL = "https://img2.pic.in.th/logob0b7643db577ceee.png";
+        const GRADES = ["ชั้น ป.1", "ชั้น ป.2", "ชั้น ป.3", "ชั้น ป.4", "ชั้น ป.5", "ชั้น ป.6"];
+
+        // Icon Component using SVG paths from Lucide
+        const Icon = ({ name, size = 20, className = "" }) => {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [name]);
+            return <i data-lucide={name} style={{width: size, height: size}} className={className}></i>;
+        };
+
+        const App = () => {
+            const [rawData, setRawData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [selectedGrade, setSelectedGrade] = useState('All');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [dates, setDates] = useState([]);
+
+            const fetchData = async () => {
+                setLoading(true);
+                setError(null);
+                try {
+                    const response = await fetch(GAS_URL);
+                    const data = await response.json();
+                    
+                    if (data.error) throw new Error(data.error);
+
+                    let combined = [];
+                    let detectedDates = new Set();
+
+                    GRADES.forEach(grade => {
+                        if (data[grade]) {
+                            data[grade].forEach(row => {
+                                const attendance = {};
+                                Object.keys(row).forEach(key => {
+                                    if (!["คำนำหน้า", "ชื่อ", "นามสกุล"].includes(key)) {
+                                        attendance[key] = row[key] === true || row[key] === "TRUE";
+                                        detectedDates.add(key);
+                                    }
+                                });
+
+                                combined.push({
+                                    grade: grade.replace('ชั้น ', ''),
+                                    prefix: row["คำนำหน้า"],
+                                    name: row["ชื่อ"],
+                                    surname: row["นามสกุล"],
+                                    attendance: attendance
+                                });
+                            });
+                        }
+                    });
+
+                    setRawData(combined);
+                    setDates(Array.from(detectedDates).sort());
+                    setLoading(false);
+                } catch (err) {
+                    console.error("Fetch Error:", err);
+                    setError("ไม่สามารถดึงข้อมูลได้: " + err.message);
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchData();
+            }, []);
+
+            const stats = useMemo(() => {
+                if (rawData.length === 0) return null;
+
+                const filtered = selectedGrade === 'All' 
+                    ? rawData 
+                    : rawData.filter(s => s.grade === selectedGrade.replace('ชั้น ', ''));
+                
+                const searchFiltered = filtered.filter(s => 
+                    `${s.name} ${s.surname}`.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+
+                let totalDrank = 0;
+                let totalPossible = filtered.length * dates.length;
+                
+                filtered.forEach(s => {
+                    Object.values(s.attendance).forEach(val => { if (val) totalDrank++; });
+                });
+
+                const dailyTrend = dates.map(date => {
+                    let count = 0;
+                    filtered.forEach(s => { if (s.attendance[date]) count++; });
+                    return { 
+                        name: date.split('/')[0] + '/' + date.split('/')[1], 
+                        count: count,
+                        fullDate: date
+                    };
+                });
+
+                const gradeSummary = GRADES.map(g => {
+                    const gName = g.replace('ชั้น ', '');
+                    const students = rawData.filter(s => s.grade === gName);
+                    let drank = 0;
+                    students.forEach(s => {
+                        Object.values(s.attendance).forEach(v => { if (v) drank++; });
+                    });
+                    const possible = students.length * dates.length;
+                    return {
+                        name: gName,
+                        rate: possible > 0 ? Math.round((drank / possible) * 100) : 0
+                    };
+                });
+
+                return {
+                    totalStudents: filtered.length,
+                    avgRate: totalPossible > 0 ? ((totalDrank / totalPossible) * 100).toFixed(1) : 0,
+                    dailyTrend,
+                    gradeSummary,
+                    studentList: searchFiltered
+                };
+            }, [rawData, selectedGrade, searchTerm, dates]);
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <h2 className="text-xl font-bold text-slate-700">กำลังเชื่อมต่อข้อมูล Google Sheets...</h2>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center">
+                        <div className="bg-red-50 p-4 rounded-full text-red-500 mb-4">
+                            <Icon name="alert-circle" size={48} />
+                        </div>
+                        <h2 className="text-xl font-bold">เกิดข้อผิดพลาดในการโหลดข้อมูล</h2>
+                        <p className="text-slate-500 mt-2">{error}</p>
+                        <button onClick={fetchData} className="mt-6 px-6 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700">รีเฟรช</button>
+                    </div>
+                );
+            }
+
+            const COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#f472b6'];
+
+            return (
+                <div className="max-w-7xl mx-auto p-4 md:p-8">
+                    {/* Header */}
+                    <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+                        <div className="flex items-center gap-4">
+                            <img src={LOGO_URL} alt="School Logo" className="w-16 h-16 md:w-20 md:h-20 object-contain" />
+                            <div>
+                                <h1 className="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight">สรุปสถิติการดื่มนมโรงเรียน</h1>
+                                <p className="text-slate-500 text-sm">ข้อมูลเรียลไทม์จากระบบบันทึกสุขภาพนักเรียน</p>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                            <div className="relative flex-1 md:flex-none">
+                                <Icon name="search" size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input 
+                                    type="text" 
+                                    placeholder="ชื่อนักเรียน..." 
+                                    className="w-full md:w-64 pl-10 pr-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <select 
+                                className="border rounded-xl px-4 py-2 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                                value={selectedGrade}
+                                onChange={(e) => setSelectedGrade(e.target.value)}
+                            >
+                                <option value="All">ทุกชั้นเรียน</option>
+                                {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+                            </select>
+                        </div>
+                    </header>
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+                            <h3 className="text-slate-500 text-sm mb-1">นักเรียนทั้งหมด</h3>
+                            <div className="text-3xl font-bold text-blue-600">{stats.totalStudents} <span className="text-sm font-normal text-slate-400">คน</span></div>
+                        </div>
+                        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+                            <h3 className="text-slate-500 text-sm mb-1">ความสม่ำเสมอเฉลี่ย</h3>
+                            <div className="text-3xl font-bold text-emerald-500">{stats.avgRate}%</div>
+                        </div>
+                        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+                            <h3 className="text-slate-500 text-sm mb-1">ข้อมูลวันที่ล่าสุด</h3>
+                            <div className="text-3xl font-bold text-slate-800">{dates[dates.length-1] || '-'}</div>
+                        </div>
+                        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+                            <h3 className="text-slate-500 text-sm mb-1">ระยะเวลาบันทึก</h3>
+                            <div className="text-3xl font-bold text-indigo-600">{dates.length} <span className="text-sm font-normal text-slate-400">วัน</span></div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Main Charts */}
+                        <div className="lg:col-span-2 space-y-6">
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                                <h4 className="font-bold text-slate-800 mb-6">แนวโน้มการดื่มนมรายวัน</h4>
+                                <div className="h-64">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={stats.dailyTrend}>
+                                            <defs>
+                                                <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                                </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                            <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                                            <YAxis axisLine={false} tickLine={false} />
+                                            <Tooltip contentStyle={{borderRadius: '12px', border: 'none'}} />
+                                            <Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} fill="url(#colorCount)" name="จำนวนคน" />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                <div className="p-4 border-b font-bold">รายชื่อและสถานะ (20 อันดับแรก)</div>
+                                <div className="overflow-x-auto custom-scrollbar">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-slate-50 text-slate-500 uppercase">
+                                            <tr>
+                                                <th className="px-6 py-4">นักเรียน</th>
+                                                <th className="px-4 py-4 text-center">ชั้น</th>
+                                                {dates.slice(-3).map(d => <th key={d} className="px-2 py-4 text-center">{d.split('/')[0]}</th>)}
+                                                <th className="px-6 py-4 text-right">ยอดรวม</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {stats.studentList.slice(0, 20).map((s, idx) => {
+                                                const drank = Object.values(s.attendance).filter(v => v).length;
+                                                return (
+                                                    <tr key={idx} className="hover:bg-slate-50">
+                                                        <td className="px-6 py-4 font-medium whitespace-nowrap">{s.prefix}{s.name} {s.surname}</td>
+                                                        <td className="px-4 py-4 text-center"><span className="bg-slate-100 px-2 py-0.5 rounded text-[10px] font-bold">{s.grade}</span></td>
+                                                        {dates.slice(-3).map(d => (
+                                                            <td key={d} className="px-2 py-4 text-center">
+                                                                {s.attendance[d] ? <div className="w-2 h-2 rounded-full bg-emerald-500 mx-auto"></div> : <div className="w-2 h-2 rounded-full bg-rose-300 mx-auto"></div>}
+                                                            </td>
+                                                        ))}
+                                                        <td className="px-6 py-4 text-right font-bold">{drank}/{dates.length}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Side Summary */}
+                        <div className="space-y-6">
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                                <h4 className="font-bold text-slate-800 mb-6 text-center">สัดส่วนการดื่มแยกตามชั้นปี</h4>
+                                <div className="h-80">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={stats.gradeSummary} layout="vertical">
+                                            <XAxis type="number" domain={[0, 100]} hide />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} />
+                                            <Tooltip />
+                                            <Bar dataKey="rate" radius={[0, 5, 5, 0]} name="เปอร์เซ็นต์">
+                                                {stats.gradeSummary.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-6 rounded-2xl text-white shadow-lg">
+                                <h5 className="font-bold mb-2">ข้อมูลการเชื่อมต่อ</h5>
+                                <p className="text-sm opacity-80 mb-4">ระบบดึงข้อมูลล่าสุดเมื่อ: {new Date().toLocaleTimeString()}</p>
+                                <div className="text-xs bg-white/20 p-3 rounded-lg leading-relaxed">
+                                    * หากข้อมูลใน Google Sheets เปลี่ยนแปลง ระบบจะอัปเดตทันทีเมื่อกดรีเฟรชหรือเปิดหน้าใหม่
+                                </div>
+                                <button onClick={fetchData} className="w-full mt-4 bg-white text-blue-600 font-bold py-2 rounded-xl hover:bg-slate-100 transition-all">อัปเดตข้อมูลตอนนี้</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <footer className="mt-12 text-center text-slate-400 text-sm">
+                        © 2026 ระบบรายงานผลนมโรงเรียน | พัฒนาเพื่อการบริหารจัดการข้อมูลสุขภาพนักเรียน
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
