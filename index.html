@@ -1,453 +1,387 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบสรุปข้อมูลการดื่มนมโรงเรียน</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & Babel -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Recharts (for charts) -->
-    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;700&display=swap');
-        body {
-            font-family: 'Sarabun', sans-serif;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 10px;
-        }
-        /* Animation for loading state */
-        .loading-pulse {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: .5; }
-        }
-    </style>
-</head>
-<body class="bg-slate-50 text-slate-900">
-    <div id="root"></div>
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+} from 'recharts';
+import { 
+  Search, Users, TrendingUp, Award, Calendar, Filter, AlertCircle, CheckCircle2, XCircle, Loader2
+} from 'lucide-react';
 
-    <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
-        const { 
-            LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, AreaChart, Area 
-        } = Recharts;
+const App = () => {
+  const [activeTab, setActiveTab] = useState('summary');
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [error, setError] = useState(null);
 
-        // Configuration
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbxhLGjEX9jWAefstH2dmudWg3lctsPmysXknotbgtEtlt7CfI1U7WDVPcCvp1-fCcOjqQ/exec";
-        const LOGO_URL = "https://img2.pic.in.th/logob0b7643db577ceee.png";
-        const GRADES = ["ชั้น ป.1", "ชั้น ป.2", "ชั้น ป.3", "ชั้น ป.4", "ชั้น ป.5", "ชั้น ป.6"];
+  const API_URL = "https://script.google.com/macros/s/AKfycbzi23mZh4IncQVV9vl85idlZz-wBPVtR_vfcJZaqY8vt0lttGwJcW53LybqZbtqm5NL/exec";
 
-        // Lucide Icon Component Helper
-        const Icon = ({ name, size = 20, className = "" }) => {
-            useEffect(() => {
-                if (window.lucide) {
-                    window.lucide.createIcons();
-                }
-            }, [name]);
-            return <i data-lucide={name} style={{width: size, height: size}} className={`inline-block ${className}`}></i>;
-        };
+  // ฟังก์ชันแปลงวันที่เป็นรูปแบบไทย (02 กุมภาพันธ์ 2569)
+  const formatThaiDate = (dateStr) => {
+    if (!dateStr || dateStr === "-") return "-";
+    
+    try {
+      let date;
+      // รองรับทั้งรูปแบบ dd/mm/yyyy และ ISO/Date string
+      if (dateStr.includes('/')) {
+        const [d, m, y] = dateStr.split('/').map(Number);
+        date = new Date(y, m - 1, d);
+      } else {
+        date = new Date(dateStr);
+      }
 
-        const App = () => {
-            const [rawData, setRawData] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState(null);
-            const [selectedGrade, setSelectedGrade] = useState('All');
-            const [searchTerm, setSearchTerm] = useState('');
-            const [dates, setDates] = useState([]);
-            const [lastUpdated, setLastUpdated] = useState(null);
+      if (isNaN(date.getTime())) return dateStr;
 
-            const fetchData = async () => {
-                setLoading(true);
-                setError(null);
-                try {
-                    const response = await fetch(GAS_URL);
-                    if (!response.ok) throw new Error("Network response was not ok");
-                    const data = await response.json();
-                    
-                    if (data.error) throw new Error(data.error);
+      const months = [
+        "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+      ];
 
-                    let combined = [];
-                    let detectedDates = new Set();
+      return `${date.getDate().toString().padStart(2, '0')} ${months[date.getMonth()]} ${date.getFullYear() + 543}`;
+    } catch (e) {
+      return dateStr;
+    }
+  };
 
-                    GRADES.forEach(grade => {
-                        if (data[grade]) {
-                            data[grade].forEach(row => {
-                                const attendance = {};
-                                Object.keys(row).forEach(key => {
-                                    if (!["คำนำหน้า", "ชื่อ", "นามสกุล"].includes(key)) {
-                                        attendance[key] = row[key] === true || row[key] === "TRUE";
-                                        detectedDates.add(key);
-                                    }
-                                });
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-                                combined.push({
-                                    grade: grade.replace('ชั้น ', ''),
-                                    prefix: row["คำนำหน้า"],
-                                    name: row["ชื่อ"],
-                                    surname: row["นามสกุล"],
-                                    attendance: attendance
-                                });
-                            });
-                        }
-                    });
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(API_URL);
+      const json = await response.json();
+      setData(json);
+      setError(null);
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setError("ไม่สามารถเชื่อมต่อข้อมูลได้");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-                    // Sort dates properly
-                    const sortedDates = Array.from(detectedDates).sort((a, b) => {
-                        const [d1, m1, y1] = a.split('/').map(Number);
-                        const [d2, m2, y2] = b.split('/').map(Number);
-                        return new Date(y1, m1-1, d1) - new Date(y2, m2-1, d2);
-                    });
+  const allGrades = ['1', '2', '3', '4', '5', '6'];
+  
+  const stats = useMemo(() => {
+    if (!data || Object.keys(data).length === 0) return null;
+    
+    let totalStudents = 0;
+    let totalEntries = 0;
+    let totalMilkConsumed = 0;
+    const gradeStats = [];
+    const dailyDataMap = {};
 
-                    setRawData(combined);
-                    setDates(sortedDates);
-                    setLastUpdated(new Date().toLocaleTimeString());
-                    setLoading(false);
-                } catch (err) {
-                    console.error("Fetch Error:", err);
-                    setError("ไม่สามารถดึงข้อมูลได้: " + err.message);
-                    setLoading(false);
-                }
-            };
+    allGrades.forEach(grade => {
+      const students = data[grade] || [];
+      totalStudents += students.length;
+      
+      let gradeConsumed = 0;
+      let gradeEntries = 0;
 
-            useEffect(() => {
-                fetchData();
-            }, []);
-
-            const stats = useMemo(() => {
-                if (rawData.length === 0) return null;
-
-                const filteredByGrade = selectedGrade === 'All' 
-                    ? rawData 
-                    : rawData.filter(s => s.grade === selectedGrade.replace('ชั้น ', ''));
-                
-                const searchFiltered = filteredByGrade.filter(s => 
-                    `${s.prefix}${s.name} ${s.surname}`.toLowerCase().includes(searchTerm.toLowerCase())
-                );
-
-                let totalDrank = 0;
-                let totalPossible = filteredByGrade.length * dates.length;
-                
-                filteredByGrade.forEach(s => {
-                    Object.values(s.attendance).forEach(val => { if (val) totalDrank++; });
-                });
-
-                const dailyTrend = dates.map(date => {
-                    let count = 0;
-                    filteredByGrade.forEach(s => { if (s.attendance[date]) count++; });
-                    return { 
-                        name: date.split('/')[0] + '/' + date.split('/')[1], 
-                        count: count,
-                        fullDate: date
-                    };
-                });
-
-                const gradeSummary = GRADES.map(g => {
-                    const gName = g.replace('ชั้น ', '');
-                    const students = rawData.filter(s => s.grade === gName);
-                    let drank = 0;
-                    students.forEach(s => {
-                        Object.values(s.attendance).forEach(v => { if (v) drank++; });
-                    });
-                    const possible = students.length * dates.length;
-                    return {
-                        name: gName,
-                        rate: possible > 0 ? Math.round((drank / possible) * 100) : 0
-                    };
-                });
-
-                return {
-                    totalStudents: filteredByGrade.length,
-                    avgRate: totalPossible > 0 ? ((totalDrank / totalPossible) * 100).toFixed(1) : 0,
-                    dailyTrend,
-                    gradeSummary,
-                    studentList: searchFiltered
-                };
-            }, [rawData, selectedGrade, searchTerm, dates]);
-
-            if (loading) {
-                return (
-                    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-50">
-                        <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6"></div>
-                        <h2 className="text-2xl font-bold text-slate-800 loading-pulse italic">กำลังเข้าถึงข้อมูลจาก Google Sheets...</h2>
-                        <p className="text-slate-500 mt-2">กรุณารอสักครู่ ระบบกำลังประมวลผลสถิติ</p>
-                    </div>
-                );
+      students.forEach(student => {
+        Object.keys(student).forEach(key => {
+          if (key !== 'prefix' && key !== 'name' && key !== 'surname') {
+            gradeEntries++;
+            totalEntries++;
+            if (student[key] === true || student[key] === "TRUE") {
+              gradeConsumed++;
+              totalMilkConsumed++;
+              dailyDataMap[key] = (dailyDataMap[key] || 0) + 1;
+            } else {
+              dailyDataMap[key] = (dailyDataMap[key] || 0);
             }
+          }
+        });
+      });
 
-            if (error) {
-                return (
-                    <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center bg-slate-50">
-                        <div className="bg-rose-50 p-6 rounded-full text-rose-500 mb-6 shadow-sm">
-                            <Icon name="alert-triangle" size={64} />
-                        </div>
-                        <h2 className="text-2xl font-bold text-slate-800">เกิดข้อผิดพลาดในการโหลดข้อมูล</h2>
-                        <p className="text-slate-500 mt-3 max-w-md">{error}</p>
-                        <div className="flex gap-4 mt-8">
-                            <button onClick={fetchData} className="px-8 py-3 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg hover:shadow-blue-200">
-                                พยายามอีกครั้ง
-                            </button>
-                            <a href={GAS_URL} target="_blank" className="px-8 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-bold hover:bg-slate-50 transition-all">
-                                ตรวจสอบ API
-                            </a>
-                        </div>
-                    </div>
-                );
-            }
+      gradeStats.push({
+        name: `ป.${grade}`,
+        value: gradeEntries > 0 ? (gradeConsumed / gradeEntries) * 100 : 0,
+        count: gradeConsumed,
+        total: gradeEntries,
+        studentCount: students.length
+      });
+    });
 
-            const COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#f472b6'];
+    const dailyTrend = Object.keys(dailyDataMap).sort((a, b) => {
+      const [d1, m1, y1] = a.split('/').map(Number);
+      const [d2, m2, y2] = b.split('/').map(Number);
+      return new Date(y1, m1 - 1, d1) - new Date(y2, m2 - 1, d2);
+    }).map(date => ({
+      date: date, // Keep original for mapping/sorting
+      formattedDate: formatThaiDate(date),
+      count: dailyDataMap[date],
+      percentage: totalStudents > 0 ? (dailyDataMap[date] / totalStudents) * 100 : 0
+    }));
 
-            return (
-                <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8 pb-16">
-                    {/* Header Card */}
-                    <div className="bg-white rounded-[2rem] p-6 md:p-8 shadow-sm border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-8">
-                        <div className="flex items-center gap-6">
-                            <div className="bg-slate-50 p-2 rounded-2xl shadow-inner">
-                                <img src={LOGO_URL} alt="School Logo" className="w-20 h-20 md:w-24 md:h-24 object-contain" />
-                            </div>
-                            <div>
-                                <h1 className="text-3xl md:text-4xl font-bold text-slate-800 tracking-tight">รายงานสถิติการดื่มนมโรงเรียน</h1>
-                                <p className="text-blue-600 font-medium flex items-center gap-2 mt-1">
-                                    <Icon name="check-circle" size={16} /> 
-                                    เชื่อมต่อข้อมูลแบบเรียลไทม์สำเร็จ
-                                </p>
-                            </div>
-                        </div>
+    const topGrade = [...gradeStats].sort((a, b) => b.value - a.value)[0];
 
-                        <div className="flex flex-col sm:flex-row items-center gap-3">
-                            <div className="relative w-full sm:w-auto">
-                                <Icon name="search" size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                                <input 
-                                    type="text" 
-                                    placeholder="ค้นหาชื่อนักเรียน..." 
-                                    className="w-full sm:w-64 pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-inner"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                />
-                            </div>
-                            <div className="flex items-center gap-2 w-full sm:w-auto">
-                                <select 
-                                    className="w-full sm:w-auto px-5 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700 shadow-sm"
-                                    value={selectedGrade}
-                                    onChange={(e) => setSelectedGrade(e.target.value)}
-                                >
-                                    <option value="All">ทุกชั้นเรียน</option>
-                                    {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
-                                </select>
-                                <button onClick={fetchData} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all" title="รีเฟรชข้อมูล">
-                                    <Icon name="refresh-cw" size={20} className="text-slate-600" />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+    return { totalStudents, avgRate: totalEntries > 0 ? (totalMilkConsumed / totalEntries) * 100 : 0, topGrade, gradeComparison: gradeStats, dailyTrend };
+  }, [data]);
 
-                    {/* Stats Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                            <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl w-fit mb-4">
-                                <Icon name="users" size={24} />
-                            </div>
-                            <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">นักเรียนที่วิเคราะห์</h3>
-                            <div className="text-4xl font-black text-slate-800">{stats.totalStudents} <span className="text-lg font-medium text-slate-400">คน</span></div>
-                        </div>
-                        <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl w-fit mb-4">
-                                <Icon name="award" size={24} />
-                            </div>
-                            <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">อัตราความสม่ำเสมอ</h3>
-                            <div className="text-4xl font-black text-emerald-500">{stats.avgRate}%</div>
-                        </div>
-                        <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                            <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl w-fit mb-4">
-                                <Icon name="calendar" size={24} />
-                            </div>
-                            <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">ข้อมูลล่าสุดถึง</h3>
-                            <div className="text-2xl font-black text-slate-800 mt-2">{dates[dates.length-1] || '-'}</div>
-                        </div>
-                        <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mb-4">
-                                <Icon name="clock" size={24} />
-                            </div>
-                            <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">บันทึกข้อมูลแล้ว</h3>
-                            <div className="text-4xl font-black text-indigo-600">{dates.length} <span className="text-lg font-medium text-slate-400">วัน</span></div>
-                        </div>
-                    </div>
+  const searchResults = useMemo(() => {
+    if (!searchTerm) return [];
+    const results = [];
+    allGrades.forEach(grade => {
+      const students = data[grade] || [];
+      students.forEach(s => {
+        const fullName = `${s.prefix}${s.name} ${s.surname}`;
+        if (fullName.includes(searchTerm)) results.push({ ...s, grade: `ป.${grade}` });
+      });
+    });
+    return results;
+  }, [data, searchTerm]);
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        {/* Charts Area */}
-                        <div className="lg:col-span-2 space-y-8">
-                            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
-                                <div className="flex items-center justify-between mb-8">
-                                    <h4 className="text-xl font-bold text-slate-800 flex items-center gap-3">
-                                        <Icon name="trending-up" className="text-blue-500" />
-                                        แนวโน้มการดื่มนมรายวัน
-                                    </h4>
-                                    <span className="text-xs font-bold bg-slate-50 text-slate-400 px-3 py-1 rounded-full uppercase">เรียงตามวันที่</span>
-                                </div>
-                                <div className="h-72 w-full">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={stats.dailyTrend}>
-                                            <defs>
-                                                <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
-                                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                                                </linearGradient>
-                                            </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-                                            <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
-                                            <Tooltip 
-                                                contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
-                                                itemStyle={{fontWeight: 'bold'}}
-                                            />
-                                            <Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={4} fill="url(#colorCount)" name="จำนวนนักเรียนที่ดื่ม" dot={{r: 6, fill: '#3b82f6', strokeWidth: 3, stroke: '#fff'}} activeDot={{r: 8}} />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            </div>
+  const getDatesMissed = (student) => {
+    return Object.keys(student).filter(key => 
+      key !== 'prefix' && key !== 'name' && key !== 'surname' && key !== 'grade' && (student[key] === false || student[key] === "FALSE")
+    );
+  };
 
-                            {/* Student Table */}
-                            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
-                                <div className="p-6 md:p-8 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0 z-10">
-                                    <h4 className="text-xl font-bold text-slate-800">รายละเอียดรายบุคคล (20 ลำดับแรก)</h4>
-                                    <Icon name="list" className="text-slate-300" />
-                                </div>
-                                <div className="overflow-x-auto custom-scrollbar">
-                                    <table className="w-full text-left">
-                                        <thead>
-                                            <tr className="bg-slate-50/50 text-slate-400 text-xs uppercase font-black tracking-widest">
-                                                <th className="px-8 py-5">ชื่อ - นามสกุล</th>
-                                                <th className="px-4 py-5 text-center">ชั้น</th>
-                                                {dates.slice(-3).map(d => (
-                                                    <th key={d} className="px-4 py-5 text-center whitespace-nowrap">{d}</th>
-                                                ))}
-                                                <th className="px-8 py-5 text-right">คะแนนรวม</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-50">
-                                            {stats.studentList.slice(0, 20).map((s, idx) => {
-                                                const drank = Object.values(s.attendance).filter(v => v).length;
-                                                const perc = dates.length > 0 ? (drank / dates.length) * 100 : 0;
-                                                return (
-                                                    <tr key={idx} className="hover:bg-blue-50/30 transition-colors group">
-                                                        <td className="px-8 py-5 font-bold text-slate-700 whitespace-nowrap group-hover:text-blue-600">{s.prefix}{s.name} {s.surname}</td>
-                                                        <td className="px-4 py-5 text-center">
-                                                            <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-[11px] font-black">{s.grade}</span>
-                                                        </td>
-                                                        {dates.slice(-3).map(d => (
-                                                            <td key={d} className="px-4 py-5 text-center">
-                                                                {s.attendance[d] ? 
-                                                                    <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center mx-auto text-emerald-500"><Icon name="check" size={16} /></div> : 
-                                                                    <div className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center mx-auto text-rose-300"><Icon name="x" size={16} /></div>
-                                                                }
-                                                            </td>
-                                                        ))}
-                                                        <td className="px-8 py-5 text-right">
-                                                            <div className="flex flex-col items-end gap-1">
-                                                                <span className="font-black text-slate-800 text-lg">{drank}/{dates.length}</span>
-                                                                <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                                    <div className={`h-full rounded-full transition-all duration-1000 ${perc > 80 ? 'bg-emerald-500' : perc > 50 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{width: `${perc}%`}}></div>
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                {stats.studentList.length > 20 && (
-                                    <div className="p-6 text-center text-slate-400 text-sm font-bold bg-slate-50/30 italic">
-                                        ... และนักเรียนอื่นอีก {stats.studentList.length - 20} รายในรายการที่ค้นหา ...
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+  const StatCard = ({ title, value, icon: Icon, color, subValue }) => (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 transition-all hover:shadow-md" style={{ borderColor: color }}>
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-gray-500 text-sm font-medium mb-1">{title}</p>
+          <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
+          {subValue && <p className="text-xs text-gray-400 mt-1">{subValue}</p>}
+        </div>
+        <div className="p-3 rounded-xl" style={{ backgroundColor: `${color}15` }}>
+          <Icon size={24} style={{ color }} />
+        </div>
+      </div>
+    </div>
+  );
 
-                        {/* Side Stats */}
-                        <div className="space-y-8">
-                            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
-                                <h4 className="text-xl font-bold text-slate-800 mb-8 flex items-center gap-3">
-                                    <Icon name="layers" className="text-indigo-500" />
-                                    ผลสัมฤทธิ์รายชั้นปี
-                                </h4>
-                                <div className="h-96 w-full">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={stats.gradeSummary} layout="vertical" margin={{left: -20, right: 20}}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                                            <XAxis type="number" domain={[0, 100]} hide />
-                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 14, fontWeight: 'bold', fill: '#475569'}} />
-                                            <Tooltip 
-                                                cursor={{fill: 'rgba(241, 245, 249, 0.5)'}}
-                                                contentStyle={{borderRadius: '16px', border: 'none'}}
-                                            />
-                                            <Bar dataKey="rate" radius={[0, 10, 10, 0]} barSize={28} name="อัตราการดื่ม (%)">
-                                                {stats.gradeSummary.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-                                <div className="mt-6 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">สรุปภาพรวม</div>
-                                    <p className="text-sm text-slate-600 leading-relaxed">
-                                        ขณะนี้ <span className="font-bold text-slate-800">ทุกชั้นเรียน</span> มีอัตราการดื่มนมเฉลี่ยอยู่ที่ <span className="text-emerald-500 font-black">{stats.avgRate}%</span> ซึ่งอยู่ในเกณฑ์ดีเยี่ยม
-                                    </p>
-                                </div>
-                            </div>
-                            
-                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-8 rounded-[2rem] text-white shadow-xl shadow-blue-200 relative overflow-hidden group">
-                                <Icon name="zap" size={120} className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-500" />
-                                <h5 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                    <Icon name="activity" />
-                                    สถานะการเชื่อมต่อ
-                                </h5>
-                                <div className="space-y-4 relative z-10">
-                                    <div className="flex justify-between items-center bg-white/10 p-4 rounded-2xl backdrop-blur-sm border border-white/10">
-                                        <span className="font-medium">Google Sheets</span>
-                                        <span className="bg-emerald-400 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg shadow-emerald-900/20">LIVE</span>
-                                    </div>
-                                    <div className="flex justify-between items-center bg-white/10 p-4 rounded-2xl backdrop-blur-sm border border-white/10">
-                                        <span className="font-medium">อัปเดตครั้งล่าสุด</span>
-                                        <span className="font-bold">{lastUpdated || 'กำลังดึงข้อมูล...'}</span>
-                                    </div>
-                                    <button 
-                                        onClick={fetchData} 
-                                        className="w-full mt-2 bg-white text-blue-600 font-black py-4 rounded-2xl hover:bg-slate-100 transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
-                                    >
-                                        <Icon name="refresh-ccw" size={18} />
-                                        กดเพื่ออัปเดตข้อมูลเดี๋ยวนี้
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <footer className="pt-8 text-center text-slate-400 text-sm font-medium border-t border-slate-200">
-                        <p>© 2026 ระบบรายงานผลนมโรงเรียนอัจฉริยะ (Smart Milk Analytics System)</p>
-                        <p className="mt-1 opacity-50">Powered by Google Apps Script & React</p>
-                    </footer>
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white p-4 shadow-lg rounded-lg border border-gray-100">
+          <p className="font-bold text-gray-800 mb-1">{formatThaiDate(label)}</p>
+          <p className="text-red-600 font-bold">
+            จำนวน: {payload[0].value} คน ({payload[0].payload.percentage?.toFixed(1) || payload[0].payload.value?.toFixed(1)}%)
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 font-['Sarabun']">
+        <Loader2 className="animate-spin text-red-600 mb-4" size={48} />
+        <p className="text-gray-600 animate-pulse">กำลังประมวลผลข้อมูลนักเรียน...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 font-['Sarabun'] text-gray-800 pb-12">
+      <header className="bg-gradient-to-r from-red-700 via-red-600 to-yellow-500 text-white shadow-lg sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="bg-white p-1 rounded-full shadow-inner shrink-0">
+              <img src="https://img2.pic.in.th/logob0b7643db577ceee.png" alt="Logo" className="h-12 w-12 object-contain" />
+            </div>
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold leading-tight">ข้อมูลสารสนเทศการดื่มนมของนักเรียน</h1>
+              <p className="text-red-100 text-sm opacity-90 font-medium">โรงเรียนวัดแม่กะ สังกัด สพป.เชียงใหม่ เขต 2</p>
+            </div>
+          </div>
+          <div className="flex items-center bg-white/20 backdrop-blur-md px-4 py-2 rounded-full border border-white/30">
+            <Calendar size={18} className="mr-2" />
+            <span className="text-sm font-bold">วันนี้: {formatThaiDate(new Date().toLocaleDateString('en-GB'))}</span>
+          </div>
+        </div>
+      </header>
+
+      <nav className="bg-white border-b sticky top-[80px] md:top-[88px] z-40 shadow-sm overflow-x-auto no-scrollbar">
+        <div className="max-w-7xl mx-auto px-4 flex">
+          <button onClick={() => setActiveTab('summary')} className={`px-6 py-4 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'summary' ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-gray-500 hover:text-red-500'}`}>สรุปภาพรวม</button>
+          {allGrades.map(grade => (
+            <button key={grade} onClick={() => setActiveTab(grade)} className={`px-6 py-4 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === grade ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-gray-500 hover:text-red-500'}`}>ชั้น ป.{grade}</button>
+          ))}
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+        {activeTab === 'summary' ? (
+          <div className="space-y-8 animate-in fade-in">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard title="นักเรียนทั้งหมด" value={`${stats?.totalStudents || 0} คน`} icon={Users} color="#dc2626" />
+              <StatCard title="อัตราการดื่มนมเฉลี่ย" value={`${stats?.avgRate.toFixed(1) || 0}%`} icon={TrendingUp} color="#ea580c" />
+              <StatCard title="ชั้นที่ดื่มดีที่สุด" value={stats?.topGrade?.name || "-"} subValue={`เฉลี่ย ${stats?.topGrade?.value.toFixed(1)}%`} icon={Award} color="#ca8a04" />
+              <div className="bg-yellow-50 rounded-2xl p-4 flex items-center border border-yellow-200 shadow-sm">
+                <AlertCircle className="text-yellow-600 mr-3 shrink-0" size={20} />
+                <p className="text-xs text-yellow-800 leading-snug font-medium">ระบบประมวลผลข้อมูลวันที่ตามรูปแบบพุทธศักราช (พ.ศ.) และชื่อเดือนภาษาไทยเพื่อความสะดวกในการรายงานผล</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><Filter className="text-red-600" size={20} /> สัดส่วนการดื่มนมรายชั้น (%)</h3>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={stats?.gradeComparison}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={40}>
+                        {stats?.gradeComparison.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#dc2626' : '#f59e0b'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-            );
-        };
+              </div>
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><TrendingUp className="text-red-600" size={20} /> แนวโน้มจำนวนคนดื่มนมรายวัน</h3>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={stats?.dailyTrend}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                      <XAxis dataKey="date" tickFormatter={(val) => val.split('/')[0] + '/' + val.split('/')[1]} axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Line type="monotone" dataKey="count" stroke="#dc2626" strokeWidth={3} dot={{ r: 4, fill: '#dc2626' }} activeDot={{ r: 8 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="p-6 border-b bg-gray-50/50 flex justify-between items-center">
+                <h3 className="text-lg font-bold">ค้นหาประวัติรายบุคคล</h3>
+                <Search className="text-gray-400" size={20} />
+              </div>
+              <div className="p-6">
+                <input type="text" placeholder="ค้นหาด้วยชื่อหรือนามสกุล..." className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all font-medium" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                {searchTerm && (
+                  <div className="mt-6 max-h-80 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {searchResults.length > 0 ? searchResults.map((student, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-white hover:border-red-200 hover:bg-red-50/30 transition-all">
+                        <div>
+                          <p className="font-bold text-gray-800">{student.prefix}{student.name} {student.surname}</p>
+                          <p className="text-xs text-red-500 font-bold">{student.grade}</p>
+                        </div>
+                        <div className="flex gap-1 overflow-x-auto max-w-[150px] scrollbar-hide">
+                          {Object.keys(student).map(k => (
+                            k !== 'prefix' && k !== 'name' && k !== 'surname' && k !== 'grade' ? (
+                              <div key={k} className={`w-3 h-3 rounded-full shrink-0 ${student[k] === true || student[k] === "TRUE" ? 'bg-green-500' : 'bg-red-500'}`} title={formatThaiDate(k)} />
+                            ) : null
+                          ))}
+                        </div>
+                      </div>
+                    )) : <p className="col-span-full text-center py-8 text-gray-400">ไม่พบข้อมูลนักเรียน</p>}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-8 animate-in slide-in-from-right-4">
+             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <h2 className="text-3xl font-black text-gray-800 border-l-8 border-red-600 pl-4">นักเรียนชั้น ป.{activeTab}</h2>
+                <div className="bg-red-600 text-white px-6 py-2 rounded-full font-bold shadow-md">นักเรียนทั้งหมด {data[activeTab]?.length || 0} คน</div>
+             </div>
+
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                   <h3 className="text-lg font-bold mb-6">กราฟการดื่มนมรายวัน (ป.{activeTab})</h3>
+                   <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={data[activeTab]?.[0] ? Object.keys(data[activeTab][0]).filter(k => k !== 'prefix' && k !== 'name' && k !== 'surname').map(date => {
+                        const count = data[activeTab].filter(s => s[date] === true || s[date] === "TRUE").length;
+                        return { date, count, percentage: (count / data[activeTab].length) * 100 };
+                      }) : []}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                        <XAxis dataKey="date" tickFormatter={(val) => val.split('/')[0] + '/' + val.split('/')[1]} axisLine={false} tickLine={false} />
+                        <YAxis hide />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Line type="stepAfter" dataKey="count" stroke="#ca8a04" strokeWidth={3} dot={{ r: 4, fill: '#ca8a04' }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                   </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-red-600 to-red-800 text-white p-8 rounded-2xl shadow-xl flex flex-col justify-center text-center">
+                   <CheckCircle2 size={48} className="mx-auto mb-4 text-red-200" />
+                   <h4 className="text-xl font-bold">สรุปวันล่าสุด</h4>
+                   <p className="text-yellow-300 font-bold mb-2">
+                    {(() => {
+                      const students = data[activeTab] || [];
+                      if (students.length === 0) return "-";
+                      const dates = Object.keys(students[0]).filter(k => k !== 'prefix' && k !== 'name' && k !== 'surname');
+                      return formatThaiDate(dates[dates.length - 1]) || "-";
+                    })()}
+                   </p>
+                   <div className="text-5xl font-black mb-4">
+                    {(() => {
+                      const students = data[activeTab] || [];
+                      if (students.length === 0) return "0 / 0";
+                      const dates = Object.keys(students[0]).filter(k => k !== 'prefix' && k !== 'name' && k !== 'surname');
+                      const lastDate = dates[dates.length - 1];
+                      const drankCount = students.filter(s => s[lastDate] === true || s[lastDate] === "TRUE").length;
+                      return `${drankCount}/${students.length}`;
+                    })()}
+                   </div>
+                   <p className="text-red-100 text-xs opacity-80">จำนวนนักเรียนที่ดื่มนมในวันล่าสุดที่บันทึกข้อมูล</p>
+                </div>
+             </div>
+
+             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="p-6 border-b flex items-center justify-between bg-gray-50/50">
+                  <h3 className="text-lg font-bold flex items-center gap-2"><XCircle className="text-red-600" /> รายชื่อนักเรียนที่ไม่ได้ดื่มนม</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-gray-100 text-gray-500 uppercase text-xs font-bold">
+                      <tr>
+                        <th className="px-6 py-4">ลำดับ</th>
+                        <th className="px-6 py-4">ชื่อ-นามสกุล</th>
+                        <th className="px-6 py-4">จำนวนวันที่ขาด</th>
+                        <th className="px-6 py-4">วันที่ไม่ได้ดื่ม (ว/ด/ป)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {data[activeTab]?.filter(s => getDatesMissed(s).length > 0).map((student, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50 transition-all">
+                          <td className="px-6 py-4 text-gray-400 font-medium">{idx + 1}</td>
+                          <td className="px-6 py-4 font-bold text-gray-800">{student.prefix}{student.name} {student.surname}</td>
+                          <td className="px-6 py-4"><span className="text-red-600 font-black">ขาด {getDatesMissed(student).length} วัน</span></td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-wrap gap-2">
+                               {getDatesMissed(student).map((date, dIdx) => (
+                                 <span key={dIdx} className="text-[11px] bg-red-50 text-red-600 px-2 py-1 rounded-md border border-red-100 font-bold">
+                                   {formatThaiDate(date)}
+                                 </span>
+                               ))}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {(!data[activeTab] || data[activeTab]?.filter(s => getDatesMissed(s).length > 0).length === 0) && (
+                        <tr><td colSpan="4" className="px-6 py-12 text-center text-gray-400 italic">ไม่พบรายชื่อนักเรียนที่มีประวัติไม่ได้ดื่มนมในชั้นเรียนนี้</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+             </div>
+          </div>
+        )}
+      </main>
+      
+      <footer className="mt-16 text-center text-gray-400 text-sm border-t pt-8 pb-8">
+        <p>© 2024 โรงเรียนวัดแม่กะ - ระบบติดตามสุขภาพนักเรียนเชิงรุก</p>
+      </footer>
+    </div>
+  );
+};
+
+export default App;
